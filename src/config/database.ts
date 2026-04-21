@@ -1,3 +1,4 @@
+
 import 'reflect-metadata';
 import {
   DataSource,
@@ -176,15 +177,12 @@ export class InventoryLog {
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432'),
-  username: process.env.DB_USER || 'flashsale',
-  password: process.env.DB_PASSWORD || 'password',
-  database: process.env.DB_NAME || 'flashsale',
+  url: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }, // Required for Supabase
   entities: [User, Product, FlashSale, Order, InventoryLog],
   synchronize: process.env.NODE_ENV === 'development', // NEVER true in production
   logging: process.env.NODE_ENV === 'development',
-  poolSize: 20, // Connection pool of 20 as per project spec
+  poolSize: 20,
   connectTimeoutMS: 5000,
   extra: {
     max: 20,
