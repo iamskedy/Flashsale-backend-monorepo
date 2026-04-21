@@ -5,18 +5,19 @@ import { createServer } from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
+import { startWorkers } from './workers/queue.worker';
 import rateLimit from 'express-rate-limit'; 
 import { AppDataSource } from './config/database';
 import { loadLuaScripts, redisClient } from './config/redis';
 import { errorHandler } from './middleware/errorHandler';
 import { logger } from './utils/logger';
-
-// Import routes (these will be implemented Day 3)
-// import authRoutes from './routes/auth.routes';
-// import saleRoutes from './routes/sale.routes';
-// import orderRoutes from './routes/order.routes';
-// import inventoryRoutes from './routes/inventory.routes';
-// import metricsRoutes from './routes/metrics.routes';
+// Add these imports at the top of server.ts
+import authRoutes from './routes/auth.routes';
+import saleRoutes from './routes/sale.routes';
+import orderRoutes from './routes/order.routes';
+import inventoryRoutes from './routes/inventory.routes';
+import metricsRoutes from './routes/metrics.routes';
+import { authenticate, authorize } from './middleware/auth';
 
 const app: Application = express();
 export const httpServer = createServer(app);
@@ -65,11 +66,11 @@ app.get('/health', (_req: Request, res: Response) => {
 });
 
 // ─── ROUTES (uncomment as you build them in Day 3) ───────────────────────────
-// app.use('/api/auth', authRoutes);
-// app.use('/api/sales', saleRoutes);
-// app.use('/api/orders', authenticate, orderRoutes);
-// app.use('/api/inventory', authenticate, inventoryRoutes);
-// app.use('/api/metrics', authenticate, authorize('admin'), metricsRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/sales', saleRoutes);
+app.use('/api/orders', authenticate, orderRoutes);
+app.use('/api/inventory', authenticate, inventoryRoutes);
+app.use('/api/metrics', authenticate, authorize('admin'), metricsRoutes);
 
 // ─── GLOBAL ERROR HANDLER (must be LAST middleware) ──────────────────────────
 app.use(errorHandler);
@@ -82,6 +83,7 @@ async function bootstrap(): Promise<void> {
 
   // 2. Load Lua scripts into Redis
   await loadLuaScripts();
+  startWorkers();  
 
   // 3. Start HTTP server
   const PORT = parseInt(process.env.PORT || '3000');
