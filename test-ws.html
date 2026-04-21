@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<body>
+<h2>WebSocket Test</h2>
+<div id="log" style="font-family:monospace;white-space:pre"></div>
+<script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+<script>
+  const TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJlNDQ1MDdlYi05YTE2LTQ5ZWYtODE2Ny05ZTEwNWU2OGI2YWUiLCJyb2xlIjoidXNlciIsImlhdCI6MTc3Njc2MjQ0MCwiZXhwIjoxNzc2ODQ4ODQwfQ.OtasJdUoFKdR3gBuokBCINL1lrSpVHnKmoN5QPodjbc';
+  const SALE_ID = 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+
+  function log(msg) {
+    document.getElementById('log').textContent += msg + '\n';
+    console.log(msg);
+  }
+
+  const socket = io('http://localhost:3000', {
+    auth: { token: TOKEN },
+    transports: ['websocket'],
+  });
+
+  socket.on('connect', () => {
+    log('✅ Connected! Socket ID: ' + socket.id);
+    socket.emit('subscribe:sale', SALE_ID);
+    log('📡 Subscribed to sale: ' + SALE_ID);
+  });
+
+  socket.on('stock:update', (data) => log('📦 Stock update: ' + JSON.stringify(data)));
+  socket.on('order:confirmed', (data) => log('✅ Order confirmed: ' + JSON.stringify(data)));
+  socket.on('order:failed', (data) => log('❌ Order failed: ' + JSON.stringify(data)));
+  socket.on('sale:started', (data) => log('🚀 Sale started: ' + JSON.stringify(data)));
+  socket.on('sale:ended', (data) => log('🏁 Sale ended: ' + JSON.stringify(data)));
+  socket.on('connect_error', (err) => log('❌ Error: ' + err.message));
+  socket.on('disconnect', (reason) => log('🔌 Disconnected: ' + reason));
+</script>
+</body>
+</html>

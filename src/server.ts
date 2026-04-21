@@ -18,6 +18,7 @@ import orderRoutes from './routes/order.routes';
 import inventoryRoutes from './routes/inventory.routes';
 import metricsRoutes from './routes/metrics.routes';
 import { authenticate, authorize } from './middleware/auth';
+import { initSocketServer } from './websocket/socket.handler';
 
 const app: Application = express();
 export const httpServer = createServer(app);
@@ -84,6 +85,8 @@ async function bootstrap(): Promise<void> {
   // 2. Load Lua scripts into Redis
   await loadLuaScripts();
   startWorkers();  
+  initSocketServer(httpServer);
+  logger.info('Socket.IO initialized');
 
   // 3. Start HTTP server
   const PORT = parseInt(process.env.PORT || '3000');
