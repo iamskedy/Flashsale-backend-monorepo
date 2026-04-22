@@ -5,7 +5,7 @@ import { AppError } from '../utils/errors';
 import { validateRequest } from '../middleware/validate';
 import rateLimit from 'express-rate-limit';
 import { processPurchase } from '../services/purchase.service';
-import { ipKeyGenerator } from 'express-rate-limit'; 
+
 
 const router = Router();
 const orderRepo = () => AppDataSource.getRepository(Order);
@@ -14,7 +14,7 @@ const purchaseLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 5,
  
-  keyGenerator: (req) => req.user?.sub ?? ipKeyGenerator(req),
+  keyGenerator: (req) => req.user?.sub ?? (req.ip ?? 'unknown'),
   message: { error: 'Too many purchase attempts. Please wait a minute.' },
   standardHeaders: true,
   legacyHeaders: false,
