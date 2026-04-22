@@ -23,6 +23,7 @@ import { initSocketServer } from './websocket/socket.handler';
 const app: Application = express();
 export const httpServer = createServer(app);
 
+app.set('trust proxy', 1);
 // ─── MIDDLEWARE (ORDER MATTERS) ──────────────────────────────────────────────
 
 // 1. Security headers — must be first
