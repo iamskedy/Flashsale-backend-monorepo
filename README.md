@@ -2,7 +2,7 @@
 
 A production-grade Flash Sale platform engineered to handle extreme purchase concurrency without overselling, duplicate orders, or race conditions. The system was built in two phases — starting with a well-structured monolith and evolving into a fully decoupled microservices architecture deployed on AWS.
 
-> 🔗 **Live Demo:** [your-vercel-link-here](https://flashsale-frontend.shubhamkumar-dubey02-813.workers.dev/login)  
+> 🔗 **Live Demo:** [live-link-here](https://flashsale-frontend.shubhamkumar-dubey02-813.workers.dev/login)  
 > 📦 **Tech Stack:** Node.js · TypeScript · PostgreSQL · Redis · Kafka · BullMQ · Docker · AWS ECS Fargate
 
 ---
