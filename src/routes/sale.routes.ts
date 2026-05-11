@@ -4,6 +4,7 @@ import { AppDataSource, FlashSale, Product } from '../config/database';
 import { AppError } from '../utils/errors';
 import { validateRequest } from '../middleware/validate';
 import { authenticate, authorize } from '../middleware/auth';
+import { redisClient, stockKey } from '../config/redis';
 
 const router = Router();
 const saleRepo = () => AppDataSource.getRepository(FlashSale);
@@ -41,6 +42,8 @@ router.post('/',
       if (new Date(startTime) >= new Date(endTime)) throw new AppError(400, 'startTime must be before endTime');
       const sale = saleRepo().create({ productId, salePrice, totalStock, maxPerUser, startTime: new Date(startTime), endTime: new Date(endTime), status: 'scheduled' });
       await saleRepo().save(sale);
+      
+      await redisClient.set(stockKey(sale.id, sale.productId), sale.totalStock.toString());
       res.status(201).json({ status: 'success', data: sale });
     } catch (err) { next(err); }
   }

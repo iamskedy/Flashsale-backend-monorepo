@@ -12,10 +12,8 @@ const orderRepo = () => AppDataSource.getRepository(Order);
 
 const purchaseLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 5,
- 
-  keyGenerator: (req) => req.user?.sub ?? (req.ip ?? 'unknown'),
-  message: { error: 'Too many purchase attempts. Please wait a minute.' },
+  max: 10,
+  validate: false,   // ← add this line
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -34,7 +32,7 @@ router.post('/purchase',
 
       const { saleId, productId, quantity } = req.body;
 
-      const result = await processPurchase(   // ← REPLACE stub with this
+      const result = await processPurchase(   
         req.user!.sub,
         saleId,
         productId,
