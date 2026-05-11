@@ -11,17 +11,29 @@ import { AppDataSource } from './config/database';
 import { loadLuaScripts, redisClient } from './config/redis';
 import { errorHandler } from './middleware/errorHandler';
 import { logger } from './utils/logger';
-// Add these imports at the top of server.ts
 import authRoutes from './routes/auth.routes';
 import saleRoutes from './routes/sale.routes';
 import orderRoutes from './routes/order.routes';
 import inventoryRoutes from './routes/inventory.routes';
 import metricsRoutes from './routes/metrics.routes';
+import adminRoutes from './routes/admin.routes';
+import swaggerUi from 'swagger-ui-express';
+import { readFileSync } from 'fs';
+import { load } from 'js-yaml';
+import path from 'path';
+
 import { authenticate, authorize } from './middleware/auth';
 import { initSocketServer } from './websocket/socket.handler';
 
 const app: Application = express();
 export const httpServer = createServer(app);
+
+// Swagger setup
+const swaggerDoc = load(
+  readFileSync(path.join(__dirname, '../docs/swagger.yaml'), 'utf8')
+) as object;
+
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDoc));
 
 app.set('trust proxy', 1);
 // ─── MIDDLEWARE (ORDER MATTERS) ──────────────────────────────────────────────
@@ -50,11 +62,10 @@ app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 // 5. Global rate limiter — 200 req/min per IP
 const globalLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 200,
+  max: 2000, // ← raised during load testing (k6 = 1 IP, 500 requests)
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' },
-  // Remove the custom keyGenerator entirely
 });
 app.use(globalLimiter);
 
@@ -73,6 +84,7 @@ app.use('/api/sales', saleRoutes);
 app.use('/api/orders', authenticate, orderRoutes);
 app.use('/api/inventory', authenticate, inventoryRoutes);
 app.use('/api/metrics', authenticate, authorize('admin'), metricsRoutes);
+app.use('/api/admin', adminRoutes);
 
 // ─── GLOBAL ERROR HANDLER (must be LAST middleware) ──────────────────────────
 app.use(errorHandler);
@@ -110,10 +122,12 @@ async function gracefulShutdown(): Promise<void> {
   });
 }
 
-bootstrap().catch((err) => {
-  console.error('🔥 Bootstrap failed! Raw error below:');
-  console.error(err); 
-  process.exit(1);
-});
+if (require.main === module) {
+  bootstrap().catch((err) => {
+    console.error('🔥 Bootstrap failed! Raw error below:');
+    console.error(err);
+    process.exit(1);
+  });
+}
 
 export default app;

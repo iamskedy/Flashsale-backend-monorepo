@@ -14,7 +14,7 @@ export const validate = (
   const errors = validationResult(_req);
   if (!errors.isEmpty()) {
     const messages = errors.array().map((e) => e.msg).join(', ');
-    return next(new AppError(400, `Validation failed: ${messages}`));
+    return next(new AppError(422, `Validation failed: ${messages}`));
   }
   next();
 };
