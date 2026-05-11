@@ -1,0 +1,1112 @@
+openapi: 3.0.3
+info:
+  title: Flash Sale System API
+  version: 1.0.0
+  description: |
+    Production-grade Flash Sale backend — handles 50,000 concurrent users with
+    atomic Redis Lua inventory, BullMQ async payments, and Socket.IO real-time updates.
+  contact:
+    name: Flash Sale API
+
+servers:
+  - url: http://localhost:3000
+    description: Local development
+  - url: https://api.yourdomain.com
+    description: Production (ECS Fargate / ALB)
+
+tags:
+  - name: Health
+    description: Server health and uptime
+  - name: Auth
+    description: Register and login
+  - name: Sales
+    description: Public flash sale browsing
+  - name: Orders
+    description: Purchase and order history (authenticated)
+  - name: Inventory
+    description: Live Redis stock levels (authenticated)
+  - name: Metrics
+    description: Per-sale performance counters (admin only)
+  - name: Admin — Products
+    description: CRUD for products (admin only)
+  - name: Admin — Sales
+    description: CRUD for flash sales (admin only)
+  - name: Admin — Dashboard
+    description: Aggregate stats (admin only)
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    ApiSuccess:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+
+    ApiError:
+      type: object
+      properties:
+        status:
+          type: string
+          example: error
+        message:
+          type: string
+          example: Resource not found
+
+    PaginationMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 48
+        totalPages:
+          type: integer
+          example: 3
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [user, admin]
+        createdAt:
+          type: string
+          format: date-time
+
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: iPhone 16 Pro
+        description:
+          type: string
+          nullable: true
+        basePrice:
+          type: number
+          format: decimal
+          example: 1099.00
+        imageUrl:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    FlashSale:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        productId:
+          type: string
+          format: uuid
+        product:
+          $ref: '#/components/schemas/Product'
+        salePrice:
+          type: number
+          format: decimal
+          example: 799.00
+        totalStock:
+          type: integer
+          example: 200
+        maxPerUser:
+          type: integer
+          example: 1
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [scheduled, active, ended, cancelled]
+        createdAt:
+          type: string
+          format: date-time
+
+    Order:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        saleId:
+          type: string
+          format: uuid
+        productId:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+          example: 1
+        unitPrice:
+          type: number
+          example: 799.00
+        totalAmount:
+          type: number
+          example: 799.00
+        status:
+          type: string
+          enum: [pending, confirmed, failed, cancelled]
+        paymentId:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    AdminSaleEnriched:
+      allOf:
+        - $ref: '#/components/schemas/FlashSale'
+        - type: object
+          properties:
+            remainingStock:
+              type: integer
+              description: Live stock count from Redis (null if not in Redis yet)
+              nullable: true
+              example: 43
+
+paths:
+
+  # ─── HEALTH ──────────────────────────────────────────────────────────────────
+
+  /health:
+    get:
+      summary: Health check
+      tags: [Health]
+      responses:
+        '200':
+          description: Server is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  timestamp:
+                    type: integer
+                    example: 1713952800000
+                  uptime:
+                    type: number
+                    example: 3600.42
+
+  # ─── AUTH ─────────────────────────────────────────────────────────────────────
+
+  /api/auth/register:
+    post:
+      summary: Register a new user
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  minLength: 8
+                  example: MySecurePass1!
+                role:
+                  type: string
+                  enum: [user, admin]
+                  default: user
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  token:
+                    type: string
+                    description: JWT — include in Authorization header
+                  user:
+                    $ref: '#/components/schemas/User'
+        '409':
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /api/auth/login:
+    post:
+      summary: Login and receive a JWT
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  example: MySecurePass1!
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  token:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  # ─── SALES (PUBLIC) ────────────────────────────────────────────────────────────
+
+  /api/sales:
+    get:
+      summary: List recent flash sales
+      tags: [Sales]
+      responses:
+        '200':
+          description: List of flash sales (most recent 20)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FlashSale'
+
+    post:
+      summary: Create a flash sale (admin shortcut on /api/sales)
+      tags: [Sales]
+      security:
+        - BearerAuth: []
+      description: |
+        Duplicate of `POST /api/admin/sales` — kept for backwards compatibility.
+        Prefer `/api/admin/sales` for new integrations.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [productId, salePrice, totalStock, startTime, endTime]
+              properties:
+                productId:
+                  type: string
+                  format: uuid
+                salePrice:
+                  type: number
+                  example: 799.00
+                totalStock:
+                  type: integer
+                  example: 200
+                maxPerUser:
+                  type: integer
+                  default: 1
+                startTime:
+                  type: string
+                  format: date-time
+                endTime:
+                  type: string
+                  format: date-time
+      responses:
+        '201':
+          description: Sale created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    $ref: '#/components/schemas/FlashSale'
+
+  /api/sales/{id}:
+    get:
+      summary: Get a single flash sale
+      tags: [Sales]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Flash sale detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    $ref: '#/components/schemas/FlashSale'
+        '404':
+          description: Sale not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  # ─── ORDERS ────────────────────────────────────────────────────────────────────
+
+  /api/orders/purchase:
+    post:
+      summary: Purchase — atomic Lua stock deduction + async payment
+      tags: [Orders]
+      security:
+        - BearerAuth: []
+      description: |
+        **Critical path** — runs the Redis Lua purchase script atomically (stock check,
+        user-limit check, idempotency guard) then creates a pending order in PostgreSQL
+        and enqueues a BullMQ payment job. Returns 202 immediately; listen to
+        Socket.IO `order:confirmed` / `order:failed` for the final result.
+      parameters:
+        - name: x-idempotency-key
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID v4 — prevents duplicate purchases on retry/double-click
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [saleId, productId, quantity]
+              properties:
+                saleId:
+                  type: string
+                  format: uuid
+                productId:
+                  type: string
+                  format: uuid
+                quantity:
+                  type: integer
+                  minimum: 1
+                  maximum: 10
+      responses:
+        '202':
+          description: Purchase accepted — payment processing async
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: accepted
+                  data:
+                    type: object
+                    properties:
+                      orderId:
+                        type: string
+                        format: uuid
+                      status:
+                        type: string
+                        example: pending
+        '400':
+          description: Sale not started / ended, or missing idempotency key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Duplicate purchase (idempotency key reused)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '410':
+          description: Sold out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: User purchase limit reached (or rate limited — 5 req/min)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /api/orders/my-orders:
+    get:
+      summary: Get authenticated user's orders
+      tags: [Orders]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Up to 50 most recent orders
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Order'
+
+  /api/orders/{orderId}:
+    get:
+      summary: Get a single order (owner only)
+      tags: [Orders]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Order detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    $ref: '#/components/schemas/Order'
+        '403':
+          description: Order belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  # ─── INVENTORY ─────────────────────────────────────────────────────────────────
+
+  /api/inventory/{saleId}/stock:
+    get:
+      summary: Get live Redis stock level for a sale
+      tags: [Inventory]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: saleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Current stock from Redis
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    type: object
+                    properties:
+                      saleId:
+                        type: string
+                        format: uuid
+                      productId:
+                        type: string
+                        format: uuid
+                      stock:
+                        type: integer
+                        example: 43
+                      source:
+                        type: string
+                        example: redis
+        '404':
+          description: Sale not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  # ─── METRICS ───────────────────────────────────────────────────────────────────
+
+  /api/metrics/{saleId}:
+    get:
+      summary: Get per-sale performance metrics (admin)
+      tags: [Metrics]
+      security:
+        - BearerAuth: []
+      description: Returns the Redis HASH with counters — totalPurchases, error_SOLD_OUT, error_USER_LIMIT, error_DUPLICATE, totalRollbacks, totalLatencyMs, requestCount.
+      parameters:
+        - name: saleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Metrics for the sale
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    type: object
+                    properties:
+                      saleId:
+                        type: string
+                        format: uuid
+                      metrics:
+                        type: object
+                        additionalProperties:
+                          type: number
+                        example:
+                          totalPurchases: 157
+                          error_SOLD_OUT: 2803
+                          error_USER_LIMIT: 412
+                          error_DUPLICATE: 88
+                          totalRollbacks: 8
+                          totalLatencyMs: 1884
+                          requestCount: 157
+
+  # ─── ADMIN — DASHBOARD ──────────────────────────────────────────────────────────
+
+  /api/admin/dashboard:
+    get:
+      summary: Admin dashboard stats
+      tags: [Admin — Dashboard]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Aggregate counts and 5 most recent sales
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    type: object
+                    properties:
+                      stats:
+                        type: object
+                        properties:
+                          totalProducts:
+                            type: integer
+                          totalSales:
+                            type: integer
+                          activeSales:
+                            type: integer
+                          scheduledSales:
+                            type: integer
+                      recentSales:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/FlashSale'
+
+  # ─── ADMIN — PRODUCTS ──────────────────────────────────────────────────────────
+
+  /api/admin/products:
+    get:
+      summary: List all products (paginated, searchable)
+      tags: [Admin — Products]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: ILIKE search on name and description
+      responses:
+        '200':
+          description: Paginated product list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+
+    post:
+      summary: Create a new product
+      tags: [Admin — Products]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, basePrice]
+              properties:
+                name:
+                  type: string
+                  example: iPhone 16 Pro
+                basePrice:
+                  type: number
+                  minimum: 0.01
+                  example: 1099.00
+                description:
+                  type: string
+                imageUrl:
+                  type: string
+                  format: uri
+      responses:
+        '201':
+          description: Product created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    $ref: '#/components/schemas/Product'
+        '409':
+          description: Product name already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /api/admin/products/{id}:
+    get:
+      summary: Get a single product
+      tags: [Admin — Products]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Product detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    $ref: '#/components/schemas/Product'
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+    put:
+      summary: Update a product
+      tags: [Admin — Products]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                basePrice:
+                  type: number
+                  minimum: 0.01
+                description:
+                  type: string
+                imageUrl:
+                  type: string
+                  format: uri
+      responses:
+        '200':
+          description: Product updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    $ref: '#/components/schemas/Product'
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+    delete:
+      summary: Delete a product
+      tags: [Admin — Products]
+      security:
+        - BearerAuth: []
+      description: Blocked if the product has active or scheduled flash sales.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Product deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: Product deleted
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Cannot delete — active or scheduled sales exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  # ─── ADMIN — SALES ─────────────────────────────────────────────────────────────
+
+  /api/admin/sales:
+    get:
+      summary: List all flash sales with Redis stock enrichment (paginated)
+      tags: [Admin — Sales]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [scheduled, active, ended, cancelled]
+      responses:
+        '200':
+          description: Paginated sales list with live remainingStock from Redis
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdminSaleEnriched'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+
+    post:
+      summary: Create a flash sale
+      tags: [Admin — Sales]
+      security:
+        - BearerAuth: []
+      description: Also sets the Redis stock key to totalStock.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [productId, salePrice, totalStock, startTime, endTime]
+              properties:
+                productId:
+                  type: string
+                  format: uuid
+                salePrice:
+                  type: number
+                  minimum: 0.01
+                totalStock:
+                  type: integer
+                  minimum: 1
+                maxPerUser:
+                  type: integer
+                  minimum: 1
+                  default: 1
+                startTime:
+                  type: string
+                  format: date-time
+                endTime:
+                  type: string
+                  format: date-time
+      responses:
+        '201':
+          description: Sale created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    $ref: '#/components/schemas/AdminSaleEnriched'
+        '400':
+          description: startTime >= endTime
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Overlapping sale exists for this product
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /api/admin/sales/{id}:
+    put:
+      summary: Update a scheduled flash sale
+      tags: [Admin — Sales]
+      security:
+        - BearerAuth: []
+      description: Only editable when status = scheduled. Changing totalStock syncs Redis.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                salePrice:
+                  type: number
+                  minimum: 0.01
+                totalStock:
+                  type: integer
+                  minimum: 1
+                maxPerUser:
+                  type: integer
+                  minimum: 1
+                startTime:
+                  type: string
+                  format: date-time
+                endTime:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          description: Sale updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    $ref: '#/components/schemas/FlashSale'
+        '400':
+          description: Sale is not in scheduled status, or invalid time range
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Sale not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /api/admin/sales/{id}/cancel:
+    patch:
+      summary: Cancel a scheduled or active sale
+      tags: [Admin — Sales]
+      security:
+        - BearerAuth: []
+      description: Sets status = cancelled and zeroes out the Redis stock key.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Sale cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    $ref: '#/components/schemas/FlashSale'
+        '400':
+          description: Sale is already ended or cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Sale not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
