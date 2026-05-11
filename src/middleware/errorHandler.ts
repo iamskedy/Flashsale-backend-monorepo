@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { validationResult } from 'express-validator';
 import { AppError } from '../utils/errors';
 import { logger } from '../utils/logger';
 
@@ -8,6 +9,16 @@ export function errorHandler(
   res: Response,
   _next: NextFunction  // Must have 4 parameters for Express to recognize as error middleware
 ): void {
+  if ((err as any).type === 'validation' || (err as any).array) {
+    const messages = typeof (err as any).array === 'function'
+      ? (err as any).array().map((e: any) => e.msg).join(', ')
+      : err.message;
+    res.status(422).json({
+      status: 'error',
+      message: `Validation failed: ${messages}`,
+    });
+    return;
+  }
   if (err instanceof AppError) {
     // Operational error — expected, return the message to client
     res.status(err.statusCode).json({
