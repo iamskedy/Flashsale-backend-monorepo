@@ -178,15 +178,16 @@ export class InventoryLog {
 export const AppDataSource = new DataSource({
   type: 'postgres',
   url: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }, // Required for Supabase
+  ssl: { rejectUnauthorized: false },
   entities: [User, Product, FlashSale, Order, InventoryLog],
-  synchronize: process.env.NODE_ENV === 'development', // NEVER true in production
+  synchronize: process.env.NODE_ENV === 'development',
   logging: process.env.NODE_ENV === 'development',
-  poolSize: 20,
+  poolSize: 50, // ← raise from 20 to 50
   connectTimeoutMS: 5000,
   extra: {
-    max: 20,
+    max: 50,                        // ← match poolSize
+    min: 5,                         // ← keep minimum warm connections
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
+    connectionTimeoutMillis: 5000,  // ← raise from 2000 to 5000
   },
 });
