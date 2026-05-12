@@ -159,3 +159,5 @@ export async function loadLuaScripts(): Promise<void> {
   logger.info('Lua scripts loaded', { purchaseSha, rollbackSha });
 }
 
+export const getSha = () => ({ purchaseSha, rollbackSha });
+

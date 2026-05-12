@@ -5,9 +5,9 @@ import {
   userLimitKey,
   idempotentKey,
   saleMetaKey,
-  TTL,
+  TTL, getSha,
   purchaseSha,
-  rollbackSha,
+  rollbackSha,loadLuaScripts 
 } from '../config/redis';
 import { AppError } from '../utils/errors';
 import { logger } from '../utils/logger';
@@ -102,17 +102,31 @@ export async function runLuaPurchase(
   maxPerUser: number,
   idempKey: string,
 ): Promise<void> {
-  const result = await redisClient.evalsha(
-    purchaseSha, 3,
+
+  const args = [
     idempotentKey(userId, saleId),
     stockKey(saleId, productId),
     userLimitKey(saleId, userId),
     qty.toString(),
     maxPerUser.toString(),
     TTL.IDEMPOTENCY.toString(),
-  ) as LuaResult;
+  ] as const;
 
-  const [code, status] = result;
+  let result: LuaResult;
+
+  try {
+    result = await redisClient.evalsha(getSha().purchaseSha, 3, ...args) as LuaResult;
+  } catch (err: any) {
+    if (err?.message?.includes('NOSCRIPT')) {
+      // Upstash evicted the script cache — reload and retry once
+      await loadLuaScripts();
+      result = await redisClient.evalsha(getSha().purchaseSha, 3, ...args) as LuaResult;
+    } else {
+      throw err;
+    }
+  }
+
+  const [, status] = result;
 
   if (status === 'DUPLICATE') {
     await incrementError(saleId, 'DUPLICATE');
