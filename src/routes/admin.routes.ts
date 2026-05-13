@@ -59,7 +59,7 @@ router.get(
   validateRequest([param('id').isUUID()]),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const product = await productRepo().findOne({ where: { id: req.params.id } });
+      const product = await productRepo().findOne({ where: { id: req.params.id as string } });
       if (!product) throw new AppError(404, 'Product not found');
       res.json({ status: 'success', data: product });
     } catch (err) {
@@ -112,7 +112,7 @@ router.put(
   ]),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const product = await productRepo().findOne({ where: { id: req.params.id } });
+      const product = await productRepo().findOne({ where: { id: req.params.id as string } });
       if (!product) throw new AppError(404, 'Product not found');
 
       const { name, basePrice, description, imageUrl } = req.body;
@@ -138,7 +138,7 @@ router.delete(
   validateRequest([param('id').isUUID()]),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const product = await productRepo().findOne({ where: { id: req.params.id } });
+      const product = await productRepo().findOne({ where: { id: req.params.id as string } });
       if (!product) throw new AppError(404, 'Product not found');
 
       // Guard: prevent deletion if active/scheduled sales exist
@@ -285,7 +285,7 @@ router.put(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const sale = await saleRepo().findOne({
-        where: { id: req.params.id },
+        where: { id: req.params.id as string },
         relations: ['product'],
       });
       if (!sale) throw new AppError(404, 'Sale not found');
@@ -326,7 +326,7 @@ router.patch(
   validateRequest([param('id').isUUID()]),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const sale = await saleRepo().findOne({ where: { id: req.params.id } });
+      const sale = await saleRepo().findOne({ where: { id: req.params.id as string } });
       if (!sale) throw new AppError(404, 'Sale not found');
       if (sale.status === 'ended' || sale.status === 'cancelled')
         throw new AppError(400, `Sale is already ${sale.status}`);
