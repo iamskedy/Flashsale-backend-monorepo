@@ -1,0 +1,70 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    name: ✅ Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm test -- --no-coverage
+        env:
+          NODE_ENV: test
+          JWT_SECRET: test-secret
+          REDIS_URL: rediss://default:password@localhost:6379
+          DATABASE_URL: postgres://localhost/test
+
+  deploy:
+    name: 🚀 Deploy to EC2
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+
+            # Clone if first time, else pull
+            if [ ! -d "/app/flashsale-backend" ]; then
+              mkdir -p /app
+              git clone https://github.com/iamskedy/Flashsale-backend-monorepo.git /app/flashsale-backend
+            fi
+
+            cd /app/flashsale-backend
+            git fetch origin
+            git checkout main
+            git pull origin main
+
+            # Install prod deps only
+            npm ci --omit=dev
+
+            # Build TypeScript
+            npm run build
+
+            # Restart or start PM2
+            pm2 describe flashsale > /dev/null 2>&1 \
+              && pm2 restart flashsale \
+              || pm2 start dist/server.js --name flashsale
+
+            pm2 save
+            echo "✅ Deploy complete"
