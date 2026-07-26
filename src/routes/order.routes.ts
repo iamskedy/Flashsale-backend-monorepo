@@ -12,7 +12,7 @@ const orderRepo = () => AppDataSource.getRepository(Order);
 
 const purchaseLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 10,
+  max: process.env.NODE_ENV === 'development' ? 100000 : 10,
   validate: false,   // ← add this line
   standardHeaders: true,
   legacyHeaders: false,
