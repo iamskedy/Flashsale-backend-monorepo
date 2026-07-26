@@ -19,16 +19,29 @@ import { randomUUID } from 'crypto';
 // BullMQ requires host/port/password separately — parse from REDIS_URL
 function parseBullMQConnection() {
   const url = process.env.REDIS_URL!;
-  // rediss://default:PASSWORD@HOST:PORT
-  const match = url.match(/rediss?:\/\/([^:]+):([^@]+)@([^:]+):(\d+)/);
-  if (!match) throw new Error('Invalid REDIS_URL format');
-  return {
-    username: match[1],
-    password: match[2],
-    host: match[3],
-    port: parseInt(match[4]),
-    tls: {},
-  };
+  const isTLS = url.startsWith('rediss://');
+
+  const authMatch = url.match(/rediss?:\/\/([^:]+):([^@]+)@([^:]+):(\d+)/);
+  if (authMatch) {
+    return {
+      username: authMatch[1],
+      password: authMatch[2],
+      host: authMatch[3],
+      port: parseInt(authMatch[4]),
+      ...(isTLS ? { tls: {} } : {}),
+    };
+  }
+
+  const plainMatch = url.match(/rediss?:\/\/([^:]+):(\d+)/);
+  if (plainMatch) {
+    return {
+      host: plainMatch[1],
+      port: parseInt(plainMatch[2]),
+      ...(isTLS ? { tls: {} } : {}),
+    };
+  }
+
+  throw new Error('Invalid REDIS_URL format');
 }
 
 const BULL_CONNECTION = parseBullMQConnection();

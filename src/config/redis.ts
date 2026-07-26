@@ -3,7 +3,7 @@ import { logger } from '../utils/logger';
 
 // ─── CLIENT 1: For regular commands ────────────────────────────────────────
 export const redisClient = new Redis(process.env.REDIS_URL!, {
-  tls: {},
+  ...(process.env.REDIS_URL!.startsWith('rediss://') ? { tls: {} } : {}),
   retryStrategy(times: number) {
     if (times > 10) {
       logger.error('Redis: max retries reached. Giving up.');
@@ -20,7 +20,7 @@ export const redisClient = new Redis(process.env.REDIS_URL!, {
 
 // ─── CLIENT 2: Dedicated to pub/sub ────────────────────────────────────────
 export const redisSub = new Redis(process.env.REDIS_URL!, {
-  tls: {},
+  ...(process.env.REDIS_URL!.startsWith('rediss://') ? { tls: {} } : {}),
   retryStrategy(times: number) {
     if (times > 10) return null;
     return Math.min(times * 200, 3000);

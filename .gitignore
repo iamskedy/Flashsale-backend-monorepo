@@ -9,4 +9,7 @@ coverage/
 *.lcov
 clover.xml
 lcov.info
-typings/
+typings/.env.swp
+*.swp
+.env.swp
+*.swp

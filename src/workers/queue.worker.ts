@@ -7,15 +7,31 @@ import { incrementRollback } from '../services/metrics.service';
 // ─── BULLMQ CONNECTION (same Upstash TLS config) ─────────────────────────────
 function parseBullMQConnection() {
   const url = process.env.REDIS_URL!;
-  const match = url.match(/rediss?:\/\/([^:]+):([^@]+)@([^:]+):(\d+)/);
-  if (!match) throw new Error('Invalid REDIS_URL format');
-  return {
-    username: match[1],
-    password: match[2],
-    host: match[3],
-    port: parseInt(match[4]),
-    tls: {},
-  };
+  const isTLS = url.startsWith('rediss://');
+
+  // Try to match user:pass@host:port (Upstash-style)
+  const authMatch = url.match(/rediss?:\/\/([^:]+):([^@]+)@([^:]+):(\d+)/);
+  if (authMatch) {
+    return {
+      username: authMatch[1],
+      password: authMatch[2],
+      host: authMatch[3],
+      port: parseInt(authMatch[4]),
+      ...(isTLS ? { tls: {} } : {}),
+    };
+  }
+
+  // Fallback: plain host:port, no auth (local Docker-style)
+  const plainMatch = url.match(/rediss?:\/\/([^:]+):(\d+)/);
+  if (plainMatch) {
+    return {
+      host: plainMatch[1],
+      port: parseInt(plainMatch[2]),
+      ...(isTLS ? { tls: {} } : {}),
+    };
+  }
+
+  throw new Error('Invalid REDIS_URL format');
 }
 
 const REDIS_CONNECTION = parseBullMQConnection();
