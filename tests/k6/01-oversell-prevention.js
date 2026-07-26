@@ -90,7 +90,7 @@ export function setup() {
       if (res.status === 200 && res.body) {
         try {
           const parsed = JSON.parse(res.body);
-          if (parsed?.status === "success" && parsed?.token) {
+          if (parsed && parsed.status === "success" && parsed.token) {
             token = parsed.token;
           }
         } catch (_) {
