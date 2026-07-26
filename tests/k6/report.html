@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Flash Sale Load Test Report</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #0f1117; color: #e5e7eb; margin: 0; padding: 40px; }
+  .container { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 28px; margin-bottom: 4px; }
+  .subtitle { color: #9ca3af; margin-bottom: 32px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+  .card { background: #1a1d29; border-radius: 12px; padding: 20px; text-align: center; border: 1px solid #2a2e3f; }
+  .card.good { border-color: #22c55e; }
+  .card .label { font-size: 13px; color: #9ca3af; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .card .value { font-size: 32px; font-weight: 700; }
+  .card.good .value { color: #22c55e; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 32px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid #2a2e3f; font-size: 14px; }
+  th { color: #9ca3af; font-weight: 600; text-transform: uppercase; font-size: 12px; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+  .badge.pass { background: #22c55e22; color: #22c55e; }
+  .section-title { font-size: 18px; font-weight: 600; margin: 32px 0 12px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🎯 Flash Sale System — Load Test Report</h1>
+  <div class="subtitle">k6 · Oversell Prevention Test · 7/26/2026, 11:48:14 AM</div>
+
+  <div class="grid">
+    <div class="card good">
+      <div class="label">Successful Purchases</div>
+      <div class="value">100</div>
+    </div>
+    <div class="card">
+      <div class="label">Sold Out (Correct)</div>
+      <div class="value">300</div>
+    </div>
+    <div class="card good">
+      <div class="label">Overselling</div>
+      <div class="value">0</div>
+    </div>
+    <div class="card good">
+      <div class="label">Server Errors</div>
+      <div class="value">0</div>
+    </div>
+  </div>
+
+  <div class="section-title">Request Latency</div>
+  <table>
+    <tr><th>Metric</th><th>Avg</th><th>Min</th><th>Median</th><th>Max</th><th>p90</th><th>p95</th></tr>
+    <tr>
+      <td>http_req_duration (ms)</td>
+      <td>462.89</td>
+      <td>120.14</td>
+      <td>365.96</td>
+      <td>2516.04</td>
+      <td>797.64</td>
+      <td>1098.12</td>
+    </tr>
+  </table>
+
+  <div class="section-title">Test Configuration</div>
+  <table>
+    <tr><td>Virtual Users (max)</td><td>100</td></tr>
+    <tr><td>Total Iterations</td><td>500</td></tr>
+    <tr><td>Total HTTP Requests</td><td>1000</td></tr>
+    <tr><td>Checks Passed</td><td><span class="badge pass">500 / 500</span></td></tr>
+  </table>
+
+  <div class="section-title">Result</div>
+  <p style="font-size:15px; line-height:1.6;">
+    Simulated <b>500 concurrent users</b> across <b>100 virtual users</b> attempting to purchase from a flash sale with exactly <b>100 units</b> of stock, using Redis Lua atomic scripts for inventory control. Result: exactly <b>100 successful purchases</b>, zero overselling, zero server errors, p95 latency of <b>1098.12ms</b>.
+  </p>
+</div>
+</body>
+</html>
